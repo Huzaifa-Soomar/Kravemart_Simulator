@@ -2,23 +2,29 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.gridspec import GridSpec
 import warnings
 warnings.filterwarnings('ignore')
 
-# Set page configuration to wide mode
-st.set_facecolor = None
+# Page Configuration
 st.set_page_config(page_title="KraveMart Supply Chain Simulator", layout="wide")
 
-# ==========================================
-# 1. CORE COMPUTE ENGINE
-# ==========================================
-def compute(num_wh, num_sh, zones_per_wh, wh_cap, sh_cap, spike, avg_demand, buffer_pct):
+st.title("🚚 KraveMart Interactive Supply Chain Simulator")
+st.caption("Native Streamlit Deployment Engine — Production Ready")
+
+# ─────────────────────────────────────────
+# CORE COMPUTE ENGINE
+# ─────────────────────────────────────────
+def compute(num_wh, num_sh, zones_per_wh, wh_cap, sh_cap,
+            spike, avg_demand, buffer_pct):
+
     total_zones    = num_wh * zones_per_wh
     baseline_dem   = total_zones * avg_demand
     stressed_dem   = round(baseline_dem * spike)
 
     wh_capacity    = wh_cap * (1 + buffer_pct / 100)
     sh_capacity    = sh_cap * (1 + buffer_pct / 100)
+    whs_per_sh     = int(np.ceil(num_wh / num_sh))
 
     total_wh_cap   = wh_capacity * num_wh
     total_sh_cap   = sh_capacity * num_sh
@@ -59,98 +65,105 @@ def compute(num_wh, num_sh, zones_per_wh, wh_cap, sh_cap, spike, avg_demand, buf
         zones_per_wh=zones_per_wh,
     )
 
-# ==========================================
-# 2. STREAMLIT SIDEBAR (CONTROLS)
-# ==========================================
-st.sidebar.markdown("## 📊 Demand Controls")
-spike = st.sidebar.slider("Spike Multiplier (x)", 1.0, 3.0, 1.5, step=0.1)
-avg_demand = st.sidebar.slider("Zone Avg Demand (orders/day)", 50, 800, 264, step=10)
-buffer_pct = st.sidebar.slider("Buffer Capacity (%)", 0, 80, 0, step=5)
+# ─────────────────────────────────────────
+# STREAMLIT SIDEBAR CONTROLS (Replacing ipywidgets)
+# ─────────────────────────────────────────
+st.sidebar.header("🎛️ Demand Controls")
+spike_slider = st.sidebar.slider("Spike Multiplier (x)", min_value=1.0, max_value=3.0, value=1.5, step=0.1)
+demand_slider = st.sidebar.slider("Zone Avg Demand (orders/day)", min_value=50, max_value=800, value=264, step=10)
+buffer_slider = st.sidebar.slider("Buffer Capacity (%)", min_value=0, max_value=80, value=0, step=5)
 
-st.sidebar.markdown("---")
-st.sidebar.markdown("## 🏢 Infrastructure Settings")
-num_wh = st.sidebar.number_input("Number of Warehouses", 1, 12, 4)
-num_sh = st.sidebar.number_input("Number of Superhouses", 1, 6, 2)
-zones_per_wh = st.sidebar.number_input("Zones per Warehouse", 5, 100, 50)
-wh_cap = st.sidebar.number_input("WH Capacity (orders/day)", 1000, 50000, 14000, step=500)
-sh_cap = st.sidebar.number_input("SH Capacity (orders/day)", 5000, 100000, 27000, step=1000)
+st.sidebar.header("🏗️ Infrastructure Settings")
+num_wh_input = st.sidebar.number_input("Number of Warehouses", min_value=1, max_value=12, value=4)
+num_sh_input = st.sidebar.number_input("Number of Superhouses", min_value=1, max_value=6, value=2)
+zones_wh_input = st.sidebar.number_input("Zones per Warehouse", min_value=5, max_value=100, value=50)
+wh_cap_input = st.sidebar.number_input("WH Capacity (orders/day)", min_value=1000, max_value=50000, value=14000, step=500)
+sh_cap_input = st.sidebar.number_input("SH Capacity (orders/day)", min_value=5000, max_value=100000, value=27000, step=1000)
 
-# Run calculation engine
-r = compute(num_wh, num_sh, zones_per_wh, wh_cap, sh_cap, spike, avg_demand, buffer_pct)
+# Trigger calculation dynamically
+r = compute(
+    num_wh=num_wh_input, num_sh=num_sh_input, zones_per_wh=zones_wh_input,
+    wh_cap=wh_cap_input, sh_cap=sh_cap_input, spike=spike_slider,
+    avg_demand=demand_slider, buffer_pct=buffer_slider
+)
 
-# ==========================================
-# 3. STREAMLIT MAIN DASHBOARD LAYOUT
-# ==========================================
-st.title("🚀 KraveMart Interactive Supply Chain Simulator")
-st.markdown("Stress test and model logistic resilience for Karachi networks in real-time.")
-st.write("---")
-
-# Row 1: KPI Scorecard Metrics
+# ─────────────────────────────────────────
+# DYNAMIC NATIVE STREAMLIT METRIC CARDS
+# ─────────────────────────────────────────
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(label="Baseline Demand", value=f"{r['baseline_dem']:,} orders/day")
 col2.metric(label=f"Stressed Demand ({r['spike']}x)", value=f"{r['stressed_dem']:,} orders/day")
 
 status_txt = "🟢 FULLY MET" if r['deficit'] == 0 else f"🔴 DEFICIT: {r['deficit']:,}"
-col3.metric(label="Max-Flow Achieved", value=f"{r['stress_flow']:,} orders/day", delta=status_txt, delta_color="normal" if r['deficit'] == 0 else "inverse")
-col4.metric(label="Network Capacity Limit", value=f"{r['network_cap']:,} orders/day", delta=f"Limit: {r['bottleneck']}", delta_color="off")
+col3.metric(label="Max-Flow Achieved", value=f"{r['stress_flow']:,}", delta=status_txt, delta_color="normal")
+col4.metric(label="Network Capacity", value=f"{r['network_cap']:,}", delta=r['bottleneck'], delta_color="inverse")
 
-st.write("---")
+st.markdown("---")
 
-# Row 2: Two Column Layout for Metrics
-graph_col1, graph_col2 = st.columns(2)
-WH_COLORS = ['#2a78d6','#1baf7a','#eda100','#e34948','#4a3aa7','#eb6834','#e87ba4','#008300']
+# ─────────────────────────────────────────
+# PLOTTING CHART LAYOUT ENGINE
+# ─────────────────────────────────────────
+WH_COLORS = ['#2a78d6','#1baf7a','#eda100','#e34948','#4a3aa7','#eb6834','#e87ba4','#008300','#888780','#534AB7','#D85A30','#0F6E56']
 
-with graph_col1:
-    st.subheader("Warehouse Utilisation Under Stress")
-    fig1, ax1 = plt.subplots(figsize=(6, 4))
-    wh_labels = [f'WH{i+1:02d}' for i in range(r['num_wh'])]
-    utils = [min(200, r['wh_util']) for _ in range(r['num_wh'])]
-    cols = [('#e34948' if u > 100 else WH_COLORS[i % len(WH_COLORS)]) for i, u in enumerate(utils)]
-    bars = ax1.barh(wh_labels, utils, color=cols, height=0.55)
-    ax1.axvline(100, color='#e34948', linestyle='--', linewidth=1.2, label='100% Capacity')
-    ax1.set_xlim(0, max(220, max(utils)+20))
-    ax1.set_xlabel('Utilisation %')
-    ax1.legend(loc='lower right')
-    for bar, u in zip(bars, utils):
-        ax1.text(bar.get_width() + 2, bar.get_y() + bar.get_height()/2, f'{u:.0f}%', va='center', fontsize=8)
-    ax1.grid(axis='x', alpha=0.3)
-    st.pyplot(fig1)
+fig = plt.figure(figsize=(15, 9))
+fig.patch.set_facecolor('#f8f8f6')
+gs = GridSpec(2, 2, figure=fig, hspace=0.4, wspace=0.3)
 
-with graph_col2:
-    st.subheader("Min-Cut Capacity Analysis by Tier")
-    fig2, ax2 = plt.subplots(figsize=(6, 4))
-    layer_names = [l[0] for l in r['layers']]
-    layer_caps  = [l[1] for l in r['layers']]
-    is_min      = [c == r['min_layer_cap'] for c in layer_caps]
-    bar_cols    = ['#e34948' if m else '#2a78d6' for m in is_min]
-    xpos        = np.arange(len(layer_names))
-    b2 = ax2.bar(xpos, layer_caps, color=bar_cols, width=0.4)
-    ax2.axhline(r['stressed_dem'], color='#eda100', linestyle='--', label=f"Stressed Demand")
-    ax2.set_xticks(xpos)
-    ax2.set_xticklabels(['SH Cap', 'WH Cap', 'Zone Cap'], rotation=0)
-    for bar, 'cap', m in zip(b2, layer_caps, is_min):
-        ax2.text(bar.get_x()+bar.get_width()/2, cap+500, f'{cap:,}', ha='center', fontsize=8, fontweight='bold' if m else 'normal')
-    patch_min = mpatches.Patch(color='#e34948', label='Min-Cut Bottleneck')
-    patch_ok  = mpatches.Patch(color='#2a78d6', label='Sufficient Capacity')
-    ax2.legend(handles=[patch_min, patch_ok, mpatches.Patch(color='#eda100', label='Stressed Demand')], loc='lower left')
-    ax2.grid(axis='y', alpha=0.3)
-    st.pyplot(fig2)
+# Bar 1: WH Utilisation Under Stress
+ax1 = fig.add_subplot(gs[0, 0])
+ax1.set_facecolor('white')
+ax1.set_title('Warehouse utilisation under stress', fontsize=11, pad=8, color='#3d3d3a', fontweight='bold')
+num_wh = r['num_wh']
+wh_labels = [f'WH{i+1:02d}' for i in range(num_wh)]
+utils = [min(200, r['wh_util']) for _ in range(num_wh)]
+cols = [('#e34948' if u > 100 else WH_COLORS[i % len(WH_COLORS)]) for i, u in enumerate(utils)]
+bars = ax1.barh(wh_labels, utils, color=cols, height=0.55)
+ax1.axvline(100, color='#e34948', linestyle='--', linewidth=1.2, label='100% capacity')
+ax1.set_xlim(0, max(220, max(utils)+20))
+ax1.set_xlabel('Utilisation %', fontsize=9)
+ax1.legend(fontsize=8)
+for bar, u in zip(bars, utils):
+    ax1.text(bar.get_width() + 2, bar.get_y() + bar.get_height()/2, f'{u:.0f}%', va='center', fontsize=8)
+ax1.grid(axis='x', alpha=0.3)
+ax1.spines[['top','right','left']].set_visible(False)
 
-# Row 3: Network Map Diagram
-st.write("---")
-st.subheader("Functional Graph Flow Network Routing Map")
+# Bar 2: Min-Cut Layer Chart
+ax2 = fig.add_subplot(gs[0, 1])
+ax2.set_facecolor('white')
+ax2.set_title('Min-cut analysis by layer', fontsize=11, pad=8, color='#3d3d3a', fontweight='bold')
+layer_names = [l[0] for l in r['layers']]
+layer_caps  = [l[1] for l in r['layers']]
+is_min      = [c == r['min_layer_cap'] for c in layer_caps]
+bar_cols    = ['#e34948' if m else '#2a78d6' for m in is_min]
+xpos        = np.arange(len(layer_names))
+b2 = ax2.bar(xpos, layer_caps, color=bar_cols, width=0.4)
+ax2.axhline(r['stressed_dem'], color='#eda100', linestyle='--', linewidth=1.2, label=f"Stressed demand")
+ax2.set_xticks(xpos)
+ax2.set_xticklabels(layer_names, fontsize=8)
+ax2.set_ylabel('Capacity (orders/day)', fontsize=9)
+for bar, cap, m in zip(b2, layer_caps, is_min):
+    ax2.text(bar.get_x()+bar.get_width()/2, cap+500, f'{cap:,}', ha='center', va='bottom', fontsize=8, fontweight='bold' if m else 'normal')
+patch_min = mpatches.Patch(color='#e34948', label='Min-cut (bottleneck)')
+patch_ok  = mpatches.Patch(color='#2a78d6', label='OK')
+ax2.legend(handles=[patch_min, patch_ok], fontsize=8, loc='upper right')
+ax2.grid(axis='y', alpha=0.3)
+ax2.spines[['top','right','left']].set_visible(False)
 
-fig3, ax3 = plt.subplots(figsize=(12, 4))
-ax3.set_xlim(-0.5, 5); ax3.set_ylim(-0.5, r['num_wh']+0.5); ax3.axis('off')
+# Graph 3: Flow Schematic Network
+ax3 = fig.add_subplot(gs[1, 0])
+ax3.set_facecolor('white')
+ax3.set_title('Flow network schematic', fontsize=11, pad=8, color='#3d3d3a', fontweight='bold')
+ax3.set_xlim(-0.5, 5); ax3.set_ylim(-0.5, num_wh+0.5); ax3.axis('off')
 
 def draw_node(ax, x, y, txt, col, sz=1200):
     ax.scatter(x, y, s=sz, c=col, zorder=3, edgecolors='white', linewidths=1.5)
-    ax.text(x, y, txt, ha='center', va='center', fontsize=8, fontweight='bold', color='white', zorder=4)
+    ax.text(x, y, txt, ha='center', va='center', fontsize=7.5, fontweight='bold', color='white', zorder=4)
 
-mid = r['num_wh'] / 2
-sh_ys = np.linspace(0.5, r['num_wh']-0.5, r['num_sh'])
-wh_ys = np.linspace(0.3, r['num_wh']-0.3, r['num_wh'])
-whs_per_sh = int(np.ceil(r['num_wh'] / r['num_sh']))
+mid = num_wh / 2
+num_sh = r['num_sh']
+sh_ys = np.linspace(0.5, num_wh-0.5, num_sh)
+wh_ys = np.linspace(0.3, num_wh-0.3, num_wh)
+whs_per_sh = int(np.ceil(num_wh / num_sh))
 is_wh_bn = 'WH' in r['bottleneck']
 
 draw_node(ax3, 0, mid, 'HQ', '#888780')
@@ -158,7 +171,7 @@ for i, sy in enumerate(sh_ys):
     draw_node(ax3, 1.2, sy, f'SH{i+1}', '#e87ba4', 800)
     ax3.annotate('', xy=(1.05, sy), xytext=(0.2, mid), arrowprops=dict(arrowstyle='->', color='#2a78d6', lw=2))
 for i, wy in enumerate(wh_ys):
-    shi = min(int(i / whs_per_sh), r['num_sh']-1)
+    shi = min(int(i / whs_per_sh), num_sh-1)
     col = '#e34948' if is_wh_bn else WH_COLORS[i % len(WH_COLORS)]
     draw_node(ax3, 2.5, wy, f'WH{i+1}', WH_COLORS[i % len(WH_COLORS)], 700)
     ax3.annotate('', xy=(2.3, wy), xytext=(1.4, sh_ys[shi]), arrowprops=dict(arrowstyle='->', color=col, lw=1.5))
@@ -167,16 +180,19 @@ draw_node(ax3, 3.7, mid, f'{r["total_zones"]}Z', '#1baf7a', 1100)
 ax3.annotate('', xy=(4.6, mid), xytext=(4.0, mid), arrowprops=dict(arrowstyle='->', color='#888780', lw=2))
 draw_node(ax3, 4.8, mid, 'SINK', '#888780')
 
-st.pyplot(fig3)
+ax3.text(2.5, -0.3, f"Baseline: {r['base_flow']:,} | Stressed: {r['stress_flow']:,}", ha='center', fontsize=9, fontweight='bold')
 
-# Row 4: Actionable Recommendation Banner
-st.write("---")
-st.subheader("💡 Strategic Optimization Infrastructure Recommendations")
+# Inject Matplotlib chart into Streamlit layout
+st.pyplot(fig)
+
+# ─────────────────────────────────────────
+# RECOMMENDATIONS AREA
+# ─────────────────────────────────────────
+st.subheader("💡 Optimization Recommendations")
 if r['deficit'] == 0:
-    st.success(f"### 🎉 Network Healthy!\nThe logistics infrastructure comfortably absorbs the {r['spike']}x holiday surge with a residual headroom capacity of **{r['network_cap'] - r['stressed_dem']:,} orders/day**.")
+    st.success(f"Network is HEALTHY at {r['spike']}x load! Capacity headroom: {r['network_cap'] - r['stressed_dem']:,} orders/day")
 else:
-    st.error(f"### ⚠️ System Failure Deficit Captured: {r['deficit']:,} orders/day\n"
-             f"**Identified Infrastructure Bottleneck:** `{r['bottleneck']}` \n\n"
-             f"To prevent lost order volume under this structural workload stress, implement one of these fixes:\n"
-             f"* **Action A:** Allocate and construct an additional **{r['extra_wh']} hyper-local warehouses** inside failing regions.\n"
-             f"* **Action B:** Scale structural capacity buffers on nodes up by **{round((r['spike']-1)*100)}%** prior to promotional launch windows.")
+    st.error(f"OVERLOADED at {r['spike']}x demand! Bottleneck identified at: {r['bottleneck']}")
+    st.warning(f"**Action Plan Proposals:**\n"
+               f"* **Option A:** Setup/Deploy at least **{r['extra_wh']} new local warehouse infrastructure point(s)**.\n"
+               f"* **Option B:** Upgrade existing active fulfillment center limits by **{round((r['spike']-1)*100)}%** immediately to bypass structural min-cuts.")
